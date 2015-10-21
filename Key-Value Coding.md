@@ -84,3 +84,55 @@ NSNull两者中转换。
 当设置一个非对象类型的值为nil的时候，接收者会给自己发送`setNilValueForKey:`消息,`setNilValueForKey:`默认实现会抛出NSInvalidArgumentException。有特殊需求的话可以重写`setValuesForKeysWithDictionary:`，替换value,然后调用`setValue:forKey:`
 
 #点语法与Key-Value Coding
+kvc和点语法是正交的，使用kvc不一定要使用点语法，也可以在kvc之外使用点语法。在kvc中点语法用来在keypath中界定节点。如果你使用点语法访问了一个属性，那么你就调用了接收者的标准存取方法。
+
+###example:
+```
+@interface MyClass
+@property NSString *stringProperty;
+@property NSInteger integerProperty;
+@property MyClass *linkedInstance;
+@end
+```
+###在KVC中你可以像下面这样使用
+
+```
+MyClass *myInstance = [[MyClass alloc] init];
+NSString *string = [myInstance valueForKey:@"stringProperty"];
+[myInstance setValue:@2 forKey:@"integerProperty"];
+
+```
+
+###点语法
+
+```
+MyClass *anotherInstance = [[MyClass alloc] init];
+myInstance.linkedInstance = anotherInstance;
+myInstance.linkedInstance.integerProperty = 2;
+```
+###与上面的结果相同
+```
+MyClass *anotherInstance = [[MyClass alloc] init];
+myInstance.linkedInstance = anotherInstance;
+[myInstance setValue:@2 forKeyPath:@"linkedInstance.integerProperty"];
+```
+
+#KVC存取方法
+为了让KVC能找出对应的存取方法供`valueForKey:`、`setValue:forKey:`、`mutableArrayValueForKey:`、
+`mutableSetValueForKey:`调用，你需要实现kvc的存取方法。格式为`-set<Key>/-<key>`（key是占位符，代表属性的名称）。
+example:属性name，存取方法应该为`-setName:和-name.`
+###存取方法的通用模式
+通常的获取方法是-<key>,返回值为对象、数值或者数据结构，对BOOL类型的属性来说-is<Key>也是支持的。
+
+@property BOOL hidden;
+`- (BOOL)hidden {
+   return ...;
+}`
+`- (BOOL)isHidden {
+   return ...;
+}`这两个getter方法都可是合法的。
+
+为了让属性和一对一的关系支持`setValue:forKey:`方法，`-set<key>:`必须实现：`- (void)setHidden:(BOOL)flag {
+   return;
+}`
+
