@@ -136,3 +136,34 @@ example:属性name，存取方法应该为`-setName:和-name.`
    return;
 }`
 
+如果属性是非对象类型，必须实现对应的设置nil的方法，kvc中`setNilValueForKey:`方法在设置属性的值为nil时调用.我们可以在这个方法中去设置某个key默认值，或者处理没有存取方法的key。
+
+```
+
+@interface CustomModel : NSObject
+@property (nonatomic,assign)int count;
+@end
+
+//调用
+CustomModel* model = [[CustomModel alloc] init];
+[model setValue:nil forKey:@"count"];
+
+```
+会出现如下错误:
+![github logo](/Users/jianghai/Desktop/78D816B4-69B1-42BF-926F-2E883EDF4BBC.png)
+
+这种情况，我们应该重写类的`-setNilValueForKey:`方法
+
+```
+- (void)setNilValueForKey:(NSString *)theKey {
+    if ([theKey isEqualToString:@"count"]) {
+        [self setValue:@YES forKey:@"count"];
+    }
+    else {
+        [super setNilValueForKey:theKey];
+    }
+}
+```
+
+#集合存取方法（一对多的属性）
+虽然可以使用 `-<key> `和 `-set<Key>:` 的方式来存取collection，但是通常你是操作返回的collection对象。但是如果需要通过 KVC 来操作collection中的内容的话就需要实现 collection额外的存取方法`mutableArrayValueForKey: `或者 `mutableSetValueForKey:`。
