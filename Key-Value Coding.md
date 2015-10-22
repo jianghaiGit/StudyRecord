@@ -165,5 +165,140 @@ CustomModel* model = [[CustomModel alloc] init];
 }
 ```
 
-#集合存取方法（一对多的属性）
-虽然可以使用 `-<key> `和 `-set<Key>:` 的方式来存取collection，但是通常你是操作返回的collection对象。但是如果需要通过 KVC 来操作collection中的内容的话就需要实现 collection额外的存取方法`mutableArrayValueForKey: `或者 `mutableSetValueForKey:`。
+#集合存取器(一对多的属性）
+虽然可以使用 `-<key> `和 `-set<Key>:` 的方式来存取collection，但是通常你是操作返回的collection对象。但是如果需要通过 KVC 来操作collection中的内容的话就需要实现 collection额外的存取方法`mutableArrayValueForKey: `、`mutableSetValueForKey:`。
+
+集合的存取方法有两类，一种是NSArray为代表的有序的集合存取方法，一种是NSSet代表的无序集合存取方法。
+
+##有序存取器
+
+###Getter
+
+####有序集合的读取
+
+* `-countOf<Key>`,必须实现，和NSArray的count方法相似
+* `-objectIn<Key>AtIndex: or -<key>AtIndexes:`,这两个方法必须有一个实现，类似NSArray的`objectAtIndex: `和`objectsAtIndexes:`。
+* `-get<Key>:range:`,可选的实现,实现这个方法会增加性能。__？？？？__
+
+>
+`-countOf<Key> `返回一对多关系中对象的个数，比如有一个属性类型为`@property (nonatomic,strong)NSArray* list;` -countOfList返回值为list中对象的个数。
+
+example:
+
+```
+- (NSUInteger)countOfEmployees {    return [self.employees count];}
+```
+>`-objectIn<Key>AtIndex:`返回一对多关系中index位置中的对象。` -<key>AtIndexes:`返回接收者中NSIndexSet标明的位置中的一个array对象。这两个方法中实现任意一个就可以了。当然也可以两个都实现。
+example:
+
+```
+- (id)objectInEmployeesAtIndex:(NSUInteger)index {    return [employees objectAtIndex:index];}- (NSArray *)employeesAtIndexes:(NSIndexSet *)indexes {    return [self.employees objectsAtIndexes:indexes];}
+```
+如果想要性能提升，你也可以实现`-get<Key>:range:`获取该对象range标明的范围内对应所有对象，并保存在传入的一个缓冲池中。
+
+example:
+
+```
+- (void)getEmployees:(Employee * __unsafe_unretained *)buffer range:(NSRange)inRange {    // Return the objects in the specified range in the provided buffer.    // For example, if the employees were stored in an underlying NSArray    [self.employees getObjects:buffer range:inRange];}
+```
+
+####可变的有序集合存取
+
+实现可变的有序存取方法`-mutableArrayValueForKey:`可以更容易的去管理一个可变的集合。实现了这些方法你的对象中的相对应的property就能支持KVO。
+>相比直接返回一个可变集合对象，实现可变存取器更加有优势，可变存储器在修改属性的数据方面更加有效率。
+
+要让一个可变有序集合支持KVC必须实现以下方法：
+
+* `-insertObject:in<Key>AtIndex:`、` -insert<Key>:atIndexes:`这两个方法至少要有一个实现，类似NSMutalbeArray的`insertObject:atIndex: `、` insertObjects:atIndexes:`方法。
+
+```
+- (void)insertObject:(Employee *)employee inEmployeesAtIndex:(NSUInteger)index {    [self.employees insertObject:employee atIndex:index];    return;}- (void)insertEmployees:(NSArray *)employeeArray atIndexes:(NSIndexSet *)indexes{    [self.employees insertObjects:employeeArray atIndexes:indexes];return; }
+```
+
+* `-removeObjectFrom<Key>AtIndex: `、` -remove<Key>AtIndexes:.`这两个方法至少要有一个实现，类似NSMutalbeArray的`removeObjectAtIndex:`、` removeObjectsAtIndexes:`方法。
+
+```
+- (void)removeObjectFromEmployeesAtIndex:(NSUInteger)index {    [self.employees removeObjectAtIndex:index];}- (void)removeEmployeesAtIndexes:(NSIndexSet *)indexes {    [self.employees removeObjectsAtIndexes:indexes];}
+```
+
+* `-replaceObjectIn<Key>AtIndex:withObject: `、` -replace<Key>AtIndexes:with<Key>:`可选的实现，如果对性能要求高，则实现更好。
+
+```
+- (void)replaceObjectInEmployeesAtIndex:(NSUInteger)index                             withObject:(id)anObject {    [self.employees replaceObjectAtIndex:index withObject:anObject];}- (void)replaceEmployeesAtIndexes:(NSIndexSet *)indexes                    withEmployees:(NSArray *)employeeArray {    [self.employees replaceObjectsAtIndexes:indexes withObjects:employeeArray];}
+```
+##无序存取器
+
+一般不实现无序集合的getter方法，而是直接使用NSSet或其子类的实例对象作为model来操作属性。在kvc中如果没有找到可变集合的存取方法，会直接获取该集合。只有在你操作的对象为自定义的集合对象的时候，无需集合的存取方法才有必要实现。
+
+* `countOf<Key>:`必须实现* `-enumeratorOf<Key>:`必须实现* `-memberOf<Key>:`必须实现
+
+####无序集合存取
+* `-add<Key>Object: `or `-add<Key>:`至少实现一个* `-remove<Key>Object: `or `-remove<Key>:`至少实现一个* `-intersect<Key>:`可选的，实现能提升性能
+
+#Key-Value Validation
+
+kvc提供了API验证属性的值，kvc的认可基础给类提供了机会去接收/替换/拒绝一个设置给属性的值，并返回错误原因。
+
+###命名:`-validate<Key>:error:.`
+
+```
+-(BOOL)validateName:(id *)ioValue error:(NSError * __autoreleasing *)outError {    // Implementation specific code.    return ...;}
+```
+###实现验证方法
+
+Validation methods需要传入两个参数，一个是需要被验证的值，一个是NSError对象用于返回错误信息。方法有三种可能：
+
+* value是合法的，不改变value和error，return YES
+* 值是不合法的，一个新的值不能被正确的创建和返回,此时，方法会返回NO，然后设置错误信息到NSError对象
+* 值是不合法的，但是一个新的值正确的创建和返回,此时，方法会返回YES，这种情况不修改NSError对象。必须返回一个新创建的对象并返回,即便新创建的值是可能改变的。不能返回修改过后的传入的对象
+
+```
+-(BOOL)validateName:(id *)ioValue error:(NSError * __autoreleasing *)outError
+{    // The name must not be nil, and must be at least two characters long.    if ((*ioValue == nil) || ([(NSString *)*ioValue length] < 2)) {
+        if (outError != NULL) {
+            NSString *errorString = NSLocalizedString(                                                      @"A Person's name must be at least two characters long",                                                      @"validation: Person, too short name error");
+            NSDictionary *userInfoDict = @{ NSLocalizedDescriptionKey : errorString};
+                                            *outError = [[NSError alloc] initWithDomain:PERSON_ERROR_DOMAIN                                            code:PERSON_INVALID_NAME_CODE
+                                            userInfo:userInfoDict];        }        return NO;
+    }    return YES;
+}
+```
+
+>当方法返回NO的时候必须首先检查outError参数是否为NULL，如果outError不空，应该讲outError设置为一个有效的NSError对象。
+
+###触发验证方法
+你可以通过调用`-validateValue:forKey:error:`正确的触发验证方法。`validateValue:forKey:error: `默认的实现会再接收者的Class中去寻找方法名和`validate<Key>:error:`匹配的方法，如果找到了这个方法，会触发这个方法并返回结果，如果没找到`validateValue:forKey:error:`会返回YES,确认这个设置的值;
+
+####属性的`-set<Key>:`不能调用验证方法`validate<Key>:error:`
+
+##自动验证
+一半来说，kvc不会自动触发验证方法，需要应用自己去触发验证方法。但是有些情况下，可以通过某些技术让验证方法自动触发，例如Core Data中当managed object context保存的时候，验证方法就会自动的触发，Cocoa bindings allow you to specify that validation should occur automatically。
+
+##纯量的验证
+验证方法期望传入的参数是一个object，如果返回值是一个非对象类型的属性，那么值会被装箱在一个NSValue或者NSNumber的对象中并返回。
+
+```
+-(BOOL)validateAge:(id *)ioValue error:(NSError * __autoreleasing *)outError {
+    if (*ioValue == nil) {
+        // Trap this in setNilValueForKey.
+        // An alternative might be to create new NSNumber with value 0 here.
+        return YES;
+    }
+    if ([*ioValue floatValue] <= 0.0)
+    {
+    }
+    if (outError != NULL) {
+        NSString *errorString = NSLocalizedStringFromTable(
+                                                           @"Age must be greater than zero", @"Person",
+                                                           @"validation: zero age error");
+        NSDictionary *userInfoDict = @{ NSLocalizedDescriptionKey : errorString};
+        NSError *error = [[NSError alloc] initWithDomain:PERSON_ERROR_DOMAIN
+                                                    code:PERSON_INVALID_AGE_CODE
+                                                userInfo:userInfoDict];
+        *outError = error;
+        return NO;
+    }else {
+        return YES;
+    }
+}
+```
