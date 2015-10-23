@@ -278,27 +278,63 @@ Validation methods需要传入两个参数，一个是需要被验证的值，�
 验证方法期望传入的参数是一个object，如果返回值是一个非对象类型的属性，那么值会被装箱在一个NSValue或者NSNumber的对象中并返回。
 
 ```
--(BOOL)validateAge:(id *)ioValue error:(NSError * __autoreleasing *)outError {
-    if (*ioValue == nil) {
-        // Trap this in setNilValueForKey.
-        // An alternative might be to create new NSNumber with value 0 here.
+-(BOOL)validateXnum:(id*)inValue error:(out NSError * _Nullable __autoreleasing *)outError
+{
+    if(*inValue == nil)
         return YES;
-    }
-    if ([*ioValue floatValue] <= 0.0)
-    {
-    }
-    if (outError != NULL) {
-        NSString *errorString = NSLocalizedStringFromTable(
-                                                           @"Age must be greater than zero", @"Person",
-                                                           @"validation: zero age error");
-        NSDictionary *userInfoDict = @{ NSLocalizedDescriptionKey : errorString};
-        NSError *error = [[NSError alloc] initWithDomain:PERSON_ERROR_DOMAIN
-                                                    code:PERSON_INVALID_AGE_CODE
-                                                userInfo:userInfoDict];
-        *outError = error;
+    
+    if([*inValue floatValue] < 1){
+        
+        NSNumber* num = [NSNumber numberWithFloat:1];
+        if(num){
+            *inValue = num;
+            return YES;
+        }
+        if(outError != NULL){
+            NSString* errorStr = @"errooooo";
+            NSDictionary* userinfo = @{NSLocalizedDescriptionKey:errorStr};
+            NSError* err = [[NSError alloc] initWithDomain:@"PERSON_ERROR_DOMAIN" code:1 userInfo:userinfo];
+            *outError = err;
+        }
         return NO;
-    }else {
-        return YES;
     }
+    return YES;
 }
 ```
+
+#确保支持KVC
+
+为了支持kvc，你的property必须要实现`valueForKey:`、` setValue:forKey: `。
+
+##单一的属性和一对一的关系
+* 需要实现方法`-<key>`或`-is<key>`,或者拥有一个实例变量`key`或`_key`，KVC支持首字母大写的key。
+* 如果property是可变的还需要实现`-set<Key>`
+* `在-set<Key>`中不应该执行验证方法
+* 如果你的类适用验证方法那么你应该实现`-validate<Key>:error:`
+
+##有序一对多的关系（不可变）
+* 实现`-<key>`返回一个array或者拥有一个名为`key`或`_key`的数组实例变量。
+* 实现`-countOf<Key>`必须实现,`-objectIn<Key>AtIndex:`、`-<key>AtIndexes:`两者至少有一个被实现。
+* 可以选择实现`-get<Key>:range:`以提高性能.
+##有序一对多的关系（可变）
+* `-insertObject:in<Key>AtIndex:`、`-insert<Key>:atIndexes:`两者至少有一个被实现。
+* 实现` -removeObjectFrom<Key>AtIndex`、`-remove<Key>AtIndexes:`两者至少有一个被实现。
+* 实现`-replaceObjectIn<Key>AtIndex:withObject: `或`-replace<Key>AtIndexes:with<Key>:`以提高性能
+
+##无序一对多的关系（不可变）
+* Implement a method named `-<key>` that returns a set.* Or have a set instance variable named `<key>` or `_<key>`.* Or implement the methods `-countOf<Key>`, `-enumeratorOf<Key>`, and `-memberOf<Key>:`
+
+##无序一对多的关系（可变）
+* Implement one or both of the methods `-add<Key>Object:` or `-add<Key>:`.* Implement one or both of the methods `-remove<Key>Object: `or `-remove<Key>:`.* Optionally, you can also implement `-intersect<Key>:` and `-set<Key>:` to improve performance.
+
+
+
+#对纯量和结构体的支持
+
+KVC通过自动的将纯量和数据结构装箱和拆箱为NSNumber和NSValue来提供对纯量和数据结构的支持。
+
+##Non-Object Values
+`-valueForKey:`和`-setValue:forKey:`默认的实现会自动的将非对象类型转换成对象类型
+
+`-valueForKey:`会查找对应key的存取方法或者实例变量，它会检查返回值的类型，如果这个值不是一个对象，那么他会使用返回值创建一个NSValue或NSNumber并返回。
+
