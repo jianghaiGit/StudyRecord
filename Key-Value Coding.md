@@ -336,5 +336,19 @@ KVC通过自动的将纯量和数据结构装箱和拆箱为NSNumber和NSValue�
 ##Non-Object Values
 `-valueForKey:`和`-setValue:forKey:`默认的实现会自动的将非对象类型转换成对象类型
 
-`-valueForKey:`会查找对应key的存取方法或者实例变量，它会检查返回值的类型，如果这个值不是一个对象，那么他会使用返回值创建一个NSValue或NSNumber并返回。
+`-valueForKey:`会查找对应key的存取方法或者实例变量，它会检查返回值的类型，如果这个值不是一个对象，那么他会使用返回值创建一个NSValue或NSNumber并返回。example：`numberWithBool:`
+
+相似是`-setValue:forKey`会根据存取方法或者实例变量来确定数据类型，如果key对应的值不是一个object，这个值会`-<type>Value`方法转为对应的类型。比如设置一个BOOL类型的属性的值，传入的值会调用`-boolValue`转换为一个BOOL类型的值。
+
+##处理nil值
+
+当调用`-setValue:forKey`,为一个非对象类型的属性设置一个nil值的时候会出现其他问题。当设置空值的时候，消息的接受者会被发送一个`-setNilValueForKey:`消息，`-setNilValueForKey:`默认的实现会抛出一个__NSInvalidArgumentException__异常，子类可以重写这个方法去处理这种情况。
+>如果消息接收者重写了NSObject的`unableToSetNilForKey:`方法，`unableToSetNilForKey:`会替代`setNilValueForKey:`被调用，
+
+```
+- (void)setNilValueForKey:(NSString *)theKey{    if ([theKey isEqualToString:@"age"]) {        [self setValue:[NSNumber numberWithFloat:0.0] forKey:@”age”];    } else        [super setNilValueForKey:theKey];}
+```
+
+##装箱和拆箱结构体
+
 
