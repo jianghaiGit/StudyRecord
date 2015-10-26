@@ -351,4 +351,161 @@ KVC通过自动的将纯量和数据结构装箱和拆箱为NSNumber和NSValue�
 
 ##装箱和拆箱结构体
 
+####Common struct types as wrapped using NSValue.
 
+| Data type        | Creation method           | Accessor method  |
+|------------- |:-------------:|-----:|
+NSPoint|valueWithPoint:|pointValue
+NSRange| valueWithRange:| rangeValueNSRect |valueWithRect: (OS X only) | rectValueNSSize |valueWithSize:|sizeValue
+自动装箱和拆箱对NSPoint、NSRange、NSRect、NSSize这些结构体类型也适用，他们会被转换为一个NSValue的对象。
+
+#####example
+```
+typedef struct {    float x, y, z;} ThreeFloats;
+@interface MyClass- (void)setThreeFloats:(ThreeFloats)threeFloats;- (ThreeFloats)threeFloats;@end
+```
+给MyClass的实例发送`-valueForKey:threeFloats`会触发MyClass的`- (ThreeFloats)threeFloats`方法,返回一个被转换为NSValue的对象。同样的，给MyClass实例发送`-setValue:forKey:`消息，并传入一个NSValue包装的ThreeFloats对象，会触发`setThreeFloats:`，并给NSValue对象发送`-getValue`消息。
+>这种机制不会影响引用计数和垃圾收集,因此在使用一个包含结构体的对象指针的时候要格外小心。
+
+#集合操作符
+
+集合操作符允许使用keyPath和操作符直接操作集合中的元素。
+集合操作符是特殊的keyPath，用做`-valueForKeyPath:`的参数,操作符都是由“@”开头的String。集合操作符左边的keyPath如果有，决定了当前使用操作符的集合，集合操作符右边的keyPath代表了操作符使用的集合中的属性
+
+![github logo](/Users/jianghai/Desktop/7A6515B1-0868-488C-9E45-66804BA9418C.png)
+
+>Note: It is not currently possible to define your own collection operators.
+
+
+
+
+
+
+##example Collection transactions
+payee| values amount values (formatted as currency) | date values
+|------------- |:-------------:|-----:|
+Green Power| $120.00| Dec 1, 2009
+Green Power| $150.00| Jan 1, 2010
+Green Power| $170.00| Feb 1, 2010
+Car Loan| $250.00| Jan 15, 2010
+Car Loan| $250.00| Feb 15, 2010
+Car Loan| $250.00| Mar 15, 2010 
+General Cable| $120.00| Dec 1, 2009
+General Cable| $155.00| Jan 1, 2010
+General Cable| $120.00| Feb 1, 2010 
+Mortgage| $1,250.00| Jan 15, 2010 
+Mortgage| $1,250.00| Feb 15, 2010
+Mortgage| $1,250.00| Mar 15, 2010
+Animal Hospital|  $600.00|  Jul 15, 2010
+
+###简单操作符
+* @avg(平均值):返回对应操作符右边对应的属性的平均值，操作符会将每个值转换为double进行计算，如果有nil值，会被转换为0.（example:返回集合中所有amount的平均值:456.54）
+
+ 	`NSNumber *transactionAverage = [transactions valueForKeyPath:@"@avg.amount"];`
+ 	
+* @count(元素个数) 返回集合的数量(NSNumber)，操作符右边的keyPath会被忽略.(example:返回transaction中元素的个数:13)
+
+	`NSNumber *numberOfTransactions = [transactions valueForKeyPath:@"@count"];`
+
+* @max(最大值) @max操作符会比较操作符右边的属性的值，返回找到的最大值。比较会调用`compare:`方法,因此用于比较的对象必须支持相互比较，nil值会被忽略。(example:返回日期中的最大值:Jul 15, 2010)
+
+	`NSDate *latestDate = [transactions valueForKeyPath:@"@max.date"];`
+
+* @min(最小值)
+	 `NSNumber *amountSum = [transactions valueForKeyPath:@"@sum.amount"];`
+
+###对象操作符
+
+* @distinctUnionOfObjects 返回对应属性的数组，去掉重复的数据
+* @unionOfObjects 返回对应属性所有数据的数组，不会去掉重复的数据
+	`NSArray *payees = [transactions valueForKeyPath:@"@distinctUnionOfObjects.payee"];`
+	`NSArray *payees = [transactions valueForKeyPath:@"@unionOfObjects.payee"];`
+	
+	>---
+	>__如果集合中任意一个元素为nil操作符会抛出异常__
+	
+	>---
+	
+###数组和集合操作符
+数组和集合操作符在集合的每个元素为一个集合的时候使用。
+
+* @distinctUnionOfArrays 返回集合中所有子集合中对应keyPath的数据的集合(去重的)
+* @unionOfArrays 返回集合中所有子集合中对应keyPath的数据的集合(不去重的)
+* @distinctUnionOfSets 返回集合中所有子集合中对应keyPath的数据的集合(不去重的)
+
+>---
+>__如果集合中任意一个元素为nil操作符会抛出异常__
+
+>---
+
+
+#存取器搜索的实现
+
+##`setValue:forKey:`
+1. 首先消息接收者会搜索名为`set<Key>:`的存取方法
+2. 如果没有找到对应的set方法，接收者的类方法`accessInstanceVariablesDirectly`会返回YES,接收者会继续搜索名为`_<key>`,`_is<Key>`,`<key>`,`is<Key>`的实例变量。
+3. 如果匹配的存取方法或者属性的实例被找到，它将会被用于设置值，这个值将会从传入的对象中取出。
+4. 如果没找到对应的存取器，也没找到对应的实例，`setValue:forUndefinedKey:`将会被触发。
+
+##`value:forKey:`
+1. 首先搜索消息接收者的类中名为`get<Key>`、`<key>`、`is<Key>`的方法，如果找到了，立即调用这个方法。如果该方法的返回值是一个对象，那么直接被返回。如果返回值是一个纯量(int,float,NSRect等),那么会将其转换为一个NSNumber对象，如果转换成功则返回这个NSNumber对象，如果转换失败，则转换为一个NSValue对象并返回。
+2. 如果没有以上方法被找到，会在消息接收者的类中搜索名为`countOf<Key>`、`objectIn<Key>AtIndex:`、`<key>AtIndexes:`的方法。如果`countOf<Key>`和其他两个方法中的一个被找到,会返回一个匹配所有NSArray方法的代理对象。所有发送给代理对象的NSArray处理方法都会转换为`countOf<Key>`、`objectIn<Key>AtIndex:`、`<key>AtIndexes:`三个方法的组合,并发送给`valueForKey:`的接收者。如果消息接收者的类实现了名为`get<Key>:range:`的方法，那么这个方法将会在需要较好性能的时候被调用。
+3. 如果没有简单的存取方法或数组的存取方法被找到，则搜索接收者的类中名为`countOf<Key>,`、`enumeratorOf<Key>`、`memberOf<Key>:`的三个方法。(对应NSSet中的方法)。如果这三个方法都被找到，会返回一个匹配所有NSSet方法的代理对象.所有的NSSet处理方法会被替换为`countOf<Key>,`、`enumeratorOf<Key>`、`memberOf<Key>:`三个方法的组合，并发送给`valueForKey:`的接收者。
+4. 如果没有简单的存取方法或集合的存取方法被找到,接收者的类方法`accessInstanceVariablesDirectly`会返回YES,接收者会继续搜索名为`_<key>`,`_is<Key>`,`<key>`,`is<Key>`的实例变量。如果找到了实例变量，则返回实例变量。如果返回值是一个纯量(int,float,NSRect等),那么会将其转换为一个NSNumber对象，如果转换成功则返回这个NSNumber对象，如果转换失败，则转换为一个NSValue对象并返回。
+5. 如果以上所有的情况据失败,`setValue:forUndefinedKey:`将会被触发。
+
+##mutableArrayValueForKey
+
+1. 首先在消息接收者的类中搜索名为`insertObject:in<Key>AtIndex:`、`removeObjectFrom<Key>AtIndex:`、`insert<Key>:atIndexes:`、`remove<Key>AtIndexes:`的方法。(对应`insertObject:atIndex:`、`removeObjectAtIndex:`、`NSMutableArrayinsertObjects:atIndexes:`、`removeObjectsAtIndexes:`)。如果至少有一个以上添加方法和至少一个移除方法被找到,所有的NSMutableArray处理方法会被替换为`insertObject:in<Key>AtIndex:`、`removeObjectFrom<Key>AtIndex:`、`insert<Key>:atIndexes:`、`remove<Key>AtIndexes:`这些方法的组合,并发送给`mutableArrayValueForKey:`的接收者。如果接收者的类实现了`replaceObjectIn<Key>AtIndex:withObject:`、`replace<Key>AtIndexes:with<Key>:`会在需要较好性能的时候调用。 
+2. 如果以上方法匹配失败,会在消息接收者的类中搜索名为`set<Key>`的存取方法,如果找到了这个方法，所有发送给代理对象的NSMutableArray消息会导致一个-`set<Key>`消息发送给消息原始接收者的`mutableArrayValueForKey:`方法。
+如果之实现了索引方法，效率会更高。
+3. 如果消息接收者的类方法`accessInstanceVariablesDirectly`返回YES,消息接收者会搜索名为`_<key>`、`<key>`的实例变量。如果找到了实例变量，所有发送给代理对象的NSMutableArray消息会被转发给类型为NSMutableArray或NSmutableArray子类的实例变量。
+4. 否则会返回一个可变集合代理对象。在代理对象收到NSmutableArray消息的时候会导致`setValue:forUndefinedKey:`消息被发送给原始消息者的`mutableArrayValueForKey:`方法。`setValue:forUndefinedKey:`默认实现会抛出__NSUndefinedKeyException__异常,但是你可以重写这个方法来进行你需要的操作。
+
+>--
+第二步中的`-set<Key>`可能会有性能问题，因此为了更好的性能,你应该在你支持KVC的类中实现第一步中需要的方法。
+
+>--
+##mutableOrderedSetValueForKey(类似mutableArrayValueForKey)
+
+1. 首先搜索名为`insertObject:in<Key>AtIndex:`、` removeObjectFrom<Key>AtIndex:`、`insert<Key>:atIndexes:`、`remove<Key>AtIndexes:`的方法类似于NSMutableOrderedSet对应的方法。如果至少有一个以上添加方法和至少一个移除方法被找到，所有发送给代理对象的NSMutableOrderedSet消息方法会被替换为`insertObject:in<Key>AtIndex:`、`removeObjectFrom<Key>AtIndex:`、`insert<Key>:atIndexes:`、`remove<Key>AtIndexes:`这些方法的组合,并发送给`mutableOrderedSetValueForKey:`的接收者。如果接收者的类实现了`replaceObjectIn<Key>AtIndex:withObject:`、`replace<Key>AtIndexes:with<Key>:`会在需要较好性能的时候调用。 
+2. 如果以上方法匹配失败,会在消息接收者的类中搜索名为`set<Key>`的存取方法,如果找到了这个方法，所有发送给代理对象的NSMutableOrderedSet消息会导致一个-`set<Key>`消息发送给`mutableOrderedSetValueForKey:`消息的接收者。
+3. 如果消息接收者的类方法`accessInstanceVariablesDirectly`返回YES,消息接收者会搜索名为`_<key>`、`<key>`的实例变量。如果找到了实例变量，所有发送给代理对象的NSMutableOrderedSet消息会被转发给类型为NSMutableOrderedSet或NSMutableOrderedSet子类的实例变量。
+4. 否则会返回一个可变集合代理对象。所有的发送给代理对象的NSMutableOrderedSet消息都会导致一个`setValue:forUndefinedKey:`消息被发送给`mutableOrderedSetValueForKey:`的接收者。`setValue:forUndefinedKey:`默认实现会抛出__NSUndefinedKeyException__异常,但是你可以重写这个方法来进行你需要的操作。
+
+>--
+第二步中的`-set<Key>`可能会有性能问题，因此为了更好的性能,你应该在你支持KVC的类中实现第一步中需要的方法。
+
+>--
+
+##mutableSetValueForKey
+
+1. 首先搜索消息接收者类中名为`add<Key>Object`、`remove<Key>Object:`（对应NSMutableSet的`addObject:`、`removeObject:`方法）、`add<Key>:`、`remove<Key>:`(对应NSMutableSet的`unionSet:`、`minusSet:`方法)。如果至少一个添加和至少一个删除方法被找到，所有发送给代理对象的NSMutableSet消息方法会被替换为` add<Key>Object:`、`remove<Key>Object:`、`add<Key>:`、`remove<Key>:`这些方法的组合,并发送给`mutableSetValueForKey:`的接收者。如果接收者的类实现了`intersect<Key>:`、`set<Key>:`会在需要较好性能的时候调用。 
+2. 如果消息的接收者是一个管理对象，搜索将不会继续，因为消息的接收者希望是一个非管理对象。__？？？？？？？__
+3. 否则会在消息接收者的类中搜索名为`set<Key>`的存取方法,如果找到了这个方法，所有发送给代理对象的NSMutableSet消息会导致一个-`set<Key>`消息发送给`mutableSetValueForKey:`方法的接收者。
+4. 如果消息接收者的类方法`accessInstanceVariablesDirectly`返回YES,消息接收者会搜索名为`_<key>`、`<key>`的实例变量。如果找到了实例变量，所有发送给代理对象的NSMutableSet消息会被转发给类型为NSMutableSet或NSMutableSet子类的实例变量。
+5. 否则会返回一个可变集合代理对象。所有的发送给代理对象的NSMutableSet消息都会导致一个`setValue:forUndefinedKey:`消息被发送给`mutableSetValueForKey:`的接收者。
+
+>--
+第三步中的`-set<Key>`可能会有性能问题，因此为了更好的性能,你应该在你支持KVC的类中实现第一步中需要的方法。
+
+>--
+
+
+#Describing Property Relationships
+类描述提供了一个方法来描述一对一和一对多的属性。在类和属性中定义这些关系，会让kvc更好理解、更加容易操作。
+##类描述
+__NSClassDescription__是一个提供了获取元数据接口的基类。一个类描述对象记录了特定类的可用的变量和类的对象与其他对象的关系。
+example:attributes方法返回了类所有属性的列表。toManyRelationshipKeys方法返回了所有定义了一对多关系的key的数组。toOneRelationshipKeys方法返回了所有定义了一对一关系的key的数组。inverseRelationshipKey方法返回提供的key回指的关系名字。
+
+NSClassDescription没有定义定义关系的方法。具体的子类必须定义这些方法。一旦创建，你就使用`registerClassDescription:forClass:`注册一个类的描述。
+
+NSScriptClassDescription是Cocoa中NSClassDescription提供的一个具体子类，他包含了一个应用的脚本信息。
+
+#性能考虑
+虽然KVC是有效率的，但是间接的访问比直接直接的方法调用慢一点。你应该只在KVC能给你提供便利的时候使用它。
+
+##重写KVC方法
+KVC默认的方法实现，例如`valueForKey:`,缓存了Object-C一些运行时信息用于提高性能。当你重写这些方法的时候，必须要谨慎以免影响应用的性能。
+##优化一对多关系
+实现了使用索引的存取方法的一对多关系将会带来可观的性能提升。
